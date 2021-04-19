@@ -3,50 +3,34 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Chain.generated.h"
 
-enum class EDirection
-{
-	NO_DIRECTION,
-	UP,
-	DOWN,
-	LEFT,
-	RIGHT
-};
-
-struct FChainItem
-{
-	FChainItem() = default;
-	FChainItem(EDirection const& Direction, FChainItem& Parent, FVector2D const& BlockPosition) :
-		Direction(Direction),
-		Parent(&Parent),
-		BlockPosition(BlockPosition) { }
-	EDirection Direction;
-	TArray<FChainItem> Children;
-	FChainItem* Parent;
-private:
-	friend class Chain;
-	FVector2D BlockPosition; //Only used in chain generation
-};
-
-
+class UChainItem;
+enum class EDirection : uint8;
 /**
  * 
  */
-class BREAKTHESYSTEM_API Chain
+UCLASS()
+class BREAKTHESYSTEM_API UChain : public UObject
 {
+	GENERATED_BODY()
 public:
-	Chain();
-	~Chain();
+	UChain();
+	//~Chain();
 
-	static Chain const* GenerateChain(FVector2D const& SizeLimits, int32 MaxNumBlocks);
-	Chain const Rotate() const;
+	//static Chain const* GenerateChain(FVector2D const& SizeLimits, int32 MaxNumBlocks);
+	UChain const* Rotate() const;
 	TArray<FVector2D> const GetBlocksPositions(FVector2D const& RootPosition) const;
+	TArray<UChainItem const*> const GetItems() const;
 private:
-	FChainItem Root;
-	TArray<FVector2D> const RGetBlocksPositions(FChainItem const& Node, FVector2D const& RootPosition) const;
-	TMap<EDirection, FVector2D> const GetValidChildrenPositions(FChainItem const& Node, FVector2D const& SizeLimits, TSet<FString>& OccupiedPositions) const;
+	friend class UChainGenerator;
+	UPROPERTY()
+	UChainItem* Root;
+	TArray<FVector2D> const RGetBlocksPositions(UChainItem const* Node, FVector2D const& RootPosition) const;
+	TArray<UChainItem const*> const RGetItems(UChainItem const* Node) const;
+
 	FVector2D const GetVectorFromDirection(EDirection const& Direction) const;
 	EDirection const GetNextDirection(EDirection const& Direction) const;
-	void RRotate(FChainItem& ChainItem);
-	void GenerateChildren(FChainItem& Node, FVector2D const& SizeLimits, TSet<FString>& OccupiedPositions, int32& MaxNumBlocks,float const SpawnProbabilityModifier = 1.0f);
+	void RRotate(UChainItem* ChainItem);
+	//void GenerateChildren(UChainItem* Node, FVector2D const& SizeLimits, TSet<FString>& OccupiedPositions, int32& MaxNumBlocks,float const SpawnProbabilityModifier = 1.0f);
 };

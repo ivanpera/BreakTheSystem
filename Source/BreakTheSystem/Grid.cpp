@@ -2,31 +2,37 @@
 
 
 #include "Grid.h"
-#include "Components/SceneComponent.h"
-#include "Components/BoxComponent.h"
-#include "ChainQueue.h"
 #include "Block.h"
 #include "Chain.h"
+#include "ChainItem.h"
 
 static float constexpr MAX_CHAIN_SIZE = 4;
-static float constexpr DEFAULT_NUM_ROWS = 11;
-static float constexpr DEFAULT_NUM_COLS = 11;
-
+static FGridSpace const DEFAULT_SPACE(false, EBlockState::NO_STATE, "");
 // Sets default values
-AGrid::AGrid() : CurrentChain(nullptr)
+UGrid::UGrid()
+{}
+
+// Called when the game starts or when spawned
+void UGrid::Initialize(uint8 _NumRows, uint8 _NumCols, FVector const& Centre, FVector const& Extents)
 {
-	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
-	PrimaryActorTick.bCanEverTick = true;
-	RootComponent = CreateDefaultSubobject<USceneComponent>("Root");
-	Box = CreateDefaultSubobject<UBoxComponent>("Box");
-	Box->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	PreviewBox = CreateDefaultSubobject<UBoxComponent>("PreviewBox");
-	PreviewBox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	ChainQueue = CreateDefaultSubobject<UChainQueue>("ChainQueue");
-	SetRootComponent(RootComponent);
+	NumRows = _NumRows;
+	NumCols = _NumCols;
+	Width = Extents.Y * 2.0f;
+	Height = Extents.Z * 2.0f;
+	float const DividerX = GetNumCols() <= 0 ? 1.0f : GetNumCols() * 1.0f;
+	float const DividerY = GetNumRows() <= 0 ? 1.0f : GetNumRows() * 1.0f;
+	Grid.Init(DEFAULT_SPACE, GetNumCols() * GetNumRows());
+	//PreviewGrid.Init(DEFAULT_SPACE, MAX_CHAIN_SIZE * MAX_CHAIN_SIZE);
+	CurrentChainBlocks.Init(nullptr, MAX_CHAIN_SIZE);
+	StepX = Width / DividerX;
+	StepY = Height / DividerY;
+	Origin = Centre
+		+ (FVector(0.0f, -Extents.Y, Extents.Z)
+			+ FVector(0.0f, StepX * 0.5f, -StepY * 0.5f));
+	//ChainQueue->Initialize(MAX_CHAIN_SIZE, MAX_CHAIN_SIZE, MAX_CHAIN_SIZE);
 }
 
-bool AGrid::CanMoveBlock(class ABlock* Block, FVector2D const& Movement, uint8 const& IgnoreStates)
+bool UGrid::CanMoveBlock(ABlock* Block, FVector2D const& Movement, uint8 const& IgnoreStates)
 {
 	FVector2D BlockPos = Block->GetPosition();
 	FVector2D TargetPos = BlockPos + Movement;
@@ -34,15 +40,15 @@ bool AGrid::CanMoveBlock(class ABlock* Block, FVector2D const& Movement, uint8 c
 	{
 		return false;
 	}
-	ABlock* ElementAt = GetElementAt(TargetPos.X, TargetPos.Y);
-	if (!ElementAt || ((uint8)ElementAt->State & IgnoreStates))// || CanMoveBlock(ElementAt, Movement, StatesMask))
+	FGridSpace const& ElementAt = GetElementAt(TargetPos.X, TargetPos.Y);
+	if (!ElementAt.bOccupied || ((uint8)ElementAt.BlockState & IgnoreStates))// || CanMoveBlock(ElementAt, Movement, StatesMask))
 	{
 		return true;
 	}
 	return false;
 }
 
-void AGrid::OnRotate()
+void UGrid::OnRotate()
 {
 	if (CurrentChain)
 	{
@@ -50,27 +56,28 @@ void AGrid::OnRotate()
 	}
 }
 
-void AGrid::OnMove(FVector2D const& Movement)
+void UGrid::OnForceDown()
 {
 	if (CurrentChain)
 	{
-		if (Movement.Y > 0)
-		{
-			bForceDown = true;
-		}
-		else
-		{
-			bMove = true;
-			MovementInput = Movement;
-		}
+		bForceDown = true;
 	}
 }
 
-void AGrid::RotateChain()
+void UGrid::OnMove(FVector2D const& Movement)
 {
 	if (CurrentChain)
 	{
-		Chain* Rotated = new Chain(CurrentChain->Rotate());
+		bMove = true;
+		MovementInput = Movement;
+	}
+}
+
+void UGrid::RotateChain()
+{
+	if (CurrentChain)
+	{
+		UChain const* Rotated = CurrentChain->Rotate();
 		TArray<FVector2D> NewPositions = Rotated->GetBlocksPositions(CurrentChainBlocks[0]->GetPosition());
 		FVector2D Offset(0.f, 0.f);
 		for (FVector2D const& NewPos : NewPositions)
@@ -96,9 +103,9 @@ void AGrid::RotateChain()
 		{
 			FVector2D const NewOffsetPos(NewPos + Offset);
 			
-			ABlock* ElementAt = GetElementAt(NewOffsetPos.X, NewOffsetPos.Y);
+			FGridSpace const& ElementAt = GetElementAt(NewOffsetPos.X, NewOffsetPos.Y);
 
-			if (ElementAt && ElementAt->State != EBlockState::IN_CHAIN)
+			if (ElementAt.bOccupied && ElementAt.BlockState != EBlockState::IN_CHAIN)
 			{
 				return;
 			}
@@ -109,25 +116,24 @@ void AGrid::RotateChain()
 			ABlock* CurrBlock = CurrentChainBlocks[i];
 			FVector2D CurrBlockPos = CurrBlock->GetPosition();
 			FVector2D TargetPos = NewPositions[i] + Offset;
-			ABlock* ElementFrom = GetElementAt(CurrBlockPos.X, CurrBlockPos.Y);
-			if (ElementFrom == CurrBlock)
+			FGridSpace const& ElementFrom = GetElementAt(CurrBlockPos.X, CurrBlockPos.Y);
+			if (ElementFrom.BlockId == CurrBlock->GetName())
 			{
-				SetElementAt(CurrBlockPos.X, CurrBlockPos.Y, nullptr);
+				SetElementAt(CurrBlockPos.X, CurrBlockPos.Y, {});
 			}
 			SetElementAt(TargetPos.X, TargetPos.Y, CurrBlock);
 			CurrBlock->SetPosition(TargetPos);
 		}
-		delete CurrentChain;
 		CurrentChain = Rotated;
 	}
 }
 
-void AGrid::MoveBlock(ABlock* Block, FVector2D const& Movement)
+void UGrid::MoveBlock(ABlock* Block, FVector2D const& Movement)
 {
 	FVector2D BlockPos = Block->GetPosition();
 	FVector2D TargetPos = BlockPos + Movement;
-	ABlock* ElementFrom = GetElementAt(BlockPos.X, BlockPos.Y);
-	if (ElementFrom == Block)
+	FGridSpace const& ElementFrom = GetElementAt(BlockPos.X, BlockPos.Y);
+	if (ElementFrom.BlockId == Block->GetName())
 	{
 		SetElementAt(BlockPos.X, BlockPos.Y, nullptr);
 	}
@@ -135,7 +141,7 @@ void AGrid::MoveBlock(ABlock* Block, FVector2D const& Movement)
 	Block->SetPosition(TargetPos);
 }
 
-bool AGrid::CanMoveChain(FVector2D const& Movement)
+bool UGrid::CanMoveChain(FVector2D const& Movement)
 {
 	for (ABlock* Block : CurrentChainBlocks)
 	{
@@ -147,29 +153,34 @@ bool AGrid::CanMoveChain(FVector2D const& Movement)
 	return true;
 }
 
-void AGrid::DeleteCurrentChain()
+void UGrid::DeleteCurrentChain()
 {
-	for (ABlock* Block : CurrentChainBlocks)
+	if (CurrentChain)
 	{
-		Block->State = EBlockState::FALLING;
-		//TODO: Move to another function
-		FVector2D const& BlockLocation = Block->GetPosition();
-		if (BlockLocation.Y < 0 && CanMoveBlock(Block, { BlockLocation.X, 0 }, (uint8)EBlockState::FALLING | (uint8)EBlockState::IN_CHAIN))
+		for (ABlock* Block : CurrentChainBlocks)
 		{
-			//Set bLost
-			//Block->SetPosition({ BlockLocation.X, 0.0f });
+			Block->State = EBlockState::FALLING;
+			//TODO: Move to another function
+			FVector2D const& BlockPosition = Block->GetPosition();
+			if (BlockPosition.Y < 0 && CanMoveBlock(Block, { BlockPosition.X, 0 }, (uint8)EBlockState::FALLING | (uint8)EBlockState::IN_CHAIN))
+			{
+				//Set bLost
+				//Block->SetPosition({ BlockLocation.X, 0.0f });
+			}
+			SetElementAt(BlockPosition.X, BlockPosition.Y, Block);
 		}
+		bRotate = false;
+		bMove = false;
+		MovementInput = { .0f, .0f };
+		bForceDown = false;
+		CurrentChain = nullptr;
+		CurrentChainBlocks.Reset(MAX_CHAIN_SIZE);
+		//bHandleInput = false;
+		//bUpdateGravity = true;
 	}
-	delete CurrentChain;
-	CurrentChain = nullptr;
-	bRotate = false;
-	bUpdateGravity = true;
-	bMove = false;
-	MovementInput = { .0f, .0f };
-	bForceDown = false;
 }
 
-void AGrid::MoveChain(FVector2D const& Movement)
+void UGrid::MoveChain(FVector2D const& Movement)
 {
 	for (ABlock* Block : CurrentChainBlocks)
 	{
@@ -177,14 +188,12 @@ void AGrid::MoveChain(FVector2D const& Movement)
 	}
 }
 
-void AGrid::FallChainBlocks(float DeltaTime)
+void UGrid::FallChainBlocks(float DeltaTime)
 {
 	if (UpdateTimeLeft <= 0 || bForceDown)
 	{
-		//UE_LOG()
 		if (CurrentChain)
 		{
-			//TODO: If last Forced input < threshold, move down each chain block
 			if (!CanMoveChain({ 0.0f, 1.0f }))
 			{
 				DeleteCurrentChain();
@@ -196,9 +205,9 @@ void AGrid::FallChainBlocks(float DeltaTime)
 			UpdateTimeLeft = UpdateTimeSeconds;
 			bForceDown = false;
 		}
-		else
+		else if (OnChainStop.IsBound())
 		{
-			SpawnChain();
+			OnChainStop.Broadcast();
 		}
 	}
 	else
@@ -207,7 +216,7 @@ void AGrid::FallChainBlocks(float DeltaTime)
 	}
 }
 
-void AGrid::HandlePlayerMovement()
+void UGrid::HandlePlayerMovement()
 {
 	if (CurrentChain)
 	{
@@ -228,107 +237,62 @@ void AGrid::HandlePlayerMovement()
 	}
 }
 
-void AGrid::UpdateGrid(float DeltaTime)
+void UGrid::UpdateGrid(float DeltaTime)
 {
+	for (ABlock* Block : GridBlocks)
+	{
+		if (Block->State == EBlockState::IN_CHAIN || Block->State == EBlockState::PENDING_RESOLUTION) {
+			continue;
+		}
+		FVector2D Movement(0.f, 1.f);
+		if (CanMoveBlock(Block, Movement, 0))
+		{
+			MoveBlock(Block, Movement);
+			Block->State = EBlockState::FALLING;
+		}
+		else
+		{
+			Block->State = EBlockState::IDLE;
+		}
+	}
+	//bUpdateGravity = false;
 	FallChainBlocks(DeltaTime);
 	HandlePlayerMovement();
-	/*if (bUpdateGravity)
-	{*/
-		for (ABlock* Block : Grid)
-		{
-			if (!Block || Block->State == EBlockState::IN_CHAIN || Block->State == EBlockState::PENDING_RESOLUTION) {
-				continue;
-			}
-			FVector2D Movement(0.f, 1.f);
-			if (CanMoveBlock(Block, Movement, 0))
-			{
-				MoveBlock(Block, Movement);
-				Block->State = EBlockState::FALLING;
-			}
-			else
-			{
-				Block->State = EBlockState::IDLE;
-			}
-		}
-		bUpdateGravity = false;
-	//if (!CanMoveChain({ 0.0f, 1.0f }))
-	//{
-	//	DeleteCurrentChain();
-	//}
-	//}
 
 	//Resolve blocks
 }
 
-UChainQueue const* AGrid::GetChainQueue() const
-{
-	return ChainQueue;
-}
-
-uint8 AGrid::GetNumCols() const
+uint8 UGrid::GetNumCols() const
 {
 	return NumCols;
 }
 
-uint8 AGrid::GetNumRows() const
+uint8 UGrid::GetNumRows() const
 {
 	return NumRows;
 }
 
-float AGrid::GetWidth() const
+float UGrid::GetWidth() const
 {
 	return Width;
 }
 
-float AGrid::GetHeight() const
+float UGrid::GetHeight() const
 {
 	return Height;
 }
 
-float AGrid::GetStepX() const
+float UGrid::GetStepX() const
 {
 	return StepX;
 }
 
-float AGrid::GetStepY() const
+float UGrid::GetStepY() const
 {
 	return StepY;
 }
 
-void AGrid::BeginDestroy()
-{
-	Super::BeginDestroy();
-	delete CurrentChain;
-}
-
-// Called when the game starts or when spawned
-void AGrid::BeginPlay()
-{
-	Super::BeginPlay();
-	FVector Extents = Box->Bounds.GetBox().GetExtent();
-	Width = Extents.Y * 2.0f;
-	Height = Extents.Z * 2.0f;
-	float const DividerX = NumCols <= 0 ? 1.0f : NumCols * 1.0f;
-	float const DividerY = NumRows <= 0 ? 1.0f : NumRows * 1.0f;
-	Grid.Init(nullptr, NumCols * (NumRows + MAX_CHAIN_SIZE));
-	PreviewGrid.Init(nullptr, MAX_CHAIN_SIZE * MAX_CHAIN_SIZE);
-	CurrentChainBlocks.Init(nullptr, MAX_CHAIN_SIZE);
-	StepX = Width / DividerX;
-	StepY = Height / DividerY;
-	Origin = Box->Bounds.GetBox().GetCenter()
-		+ (FVector(0.0f, -Extents.Y, Extents.Z)
-			+ FVector(0.0f, StepX * 0.5f, -StepY * 0.5f));
-	ChainQueue->Initialize(MAX_CHAIN_SIZE, MAX_CHAIN_SIZE, MAX_CHAIN_SIZE);
-}
-
-// Called every frame
-void AGrid::Tick(float DeltaTime)
-{
-	Super::Tick(DeltaTime);
-	UpdateGrid(DeltaTime);
-}
-
-bool AGrid::IsInBounds(FVector2D const& TestPosition) const
+bool UGrid::IsInBounds(FVector2D const& TestPosition) const
 {
 	return TestPosition.X >= 0 &&
 		TestPosition.X < GetNumCols() &&
@@ -336,39 +300,39 @@ bool AGrid::IsInBounds(FVector2D const& TestPosition) const
 		TestPosition.Y < GetNumRows();
 }
 
-void AGrid::SpawnChain()
+void UGrid::SpawnChain(UChain const* Chain)
 {
-	delete CurrentChain;
-	CurrentChain = ChainQueue->GetNext();
+	CurrentChain = Chain;
 	CurrentChainBlocks.Reset(MAX_CHAIN_SIZE);
 	float SpawnX = FMath::FloorToFloat(NumCols * .5f);
-	TArray<FVector2D> ChainBlocksPositions = CurrentChain->GetBlocksPositions({SpawnX, -1.f});
+	TArray<FVector2D> ChainBlocksPositions = CurrentChain->GetBlocksPositions({SpawnX, -1});
+	TArray<UChainItem const*> ChainItems = CurrentChain->GetItems();
+
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	FTransform Transform;
-	if (BlockType)
+	for (int i = 0; i < ChainBlocksPositions.Num(); i++)
 	{
-		for (auto const& BlockPos : ChainBlocksPositions)
-		{
-			//If the position is blocked, it's game over
-			Transform.SetLocation(Origin + FVector(0.0f, BlockPos.X * StepX, -BlockPos.Y * StepY));
-			auto NewItem = GetWorld()->SpawnActor<ABlock>(BlockType, Transform, SpawnParams);
-			float NewItemExtents = NewItem->GetExtents();
-			NewItem->State = EBlockState::IN_CHAIN;
-			float MinDimension = FMath::Min((Width / (NewItemExtents * NumCols)) * .5f, (Height / (NewItemExtents * NumRows)) * .5f);
-			NewItem->SetActorScale3D(FVector(1.0f, MinDimension, MinDimension));
-			NewItem->Initialize(this, BlockPos);
-			CurrentChainBlocks.Add(NewItem);
-			SetElementAt(BlockPos.X, BlockPos.Y, NewItem);
-		}
+		FVector2D const& BlockPos = ChainBlocksPositions[i];
+		UChainItem const* Item = ChainItems[i];
+		Transform.SetLocation(Origin + FVector(0.0f, BlockPos.X * GetStepX(), -BlockPos.Y * GetStepY()));
+		auto NewItem = GetWorld()->SpawnActor<ABlock>(Item->BlockType, Transform, SpawnParams);
+		float NewItemExtents = NewItem->GetExtents();
+		NewItem->State = EBlockState::IN_CHAIN;
+		float MinDimension = FMath::Min(
+			(GetWidth() / (NewItemExtents * GetNumCols())) * .5f,
+			(GetHeight() / (NewItemExtents * GetNumRows())) * .5f
+		);
+		CurrentChainBlocks.Add(NewItem);
+		GridBlocks.Add(NewItem);
+		SetElementAt(BlockPos.X, BlockPos.Y, NewItem);
+		NewItem->SetScale(FVector(MinDimension, MinDimension, MinDimension));
+		NewItem->Initialize(this, BlockPos);
 	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Missing BlockType"));
-	}
+	//bHandleInput = true;
 }
 
-ABlock* AGrid::GetElementAt(uint8 X, uint8 Y) const
+FGridSpace const& UGrid::GetElementAt(uint8 X, uint8 Y) const
 {
 	if (X >= 0 &&
 		X < GetNumCols() &&
@@ -377,21 +341,34 @@ ABlock* AGrid::GetElementAt(uint8 X, uint8 Y) const
 	{
 		return Grid[X + Y * NumCols];
 	}
-	return nullptr;
+	return DEFAULT_SPACE;
 }
 
-void AGrid::SetElementAt(uint8 X, uint8 Y, ABlock* NewElement)
+void UGrid::SetElementAt(uint8 X, uint8 Y, ABlock const* NewElement)
 {
 	if (X >= 0 &&
 		X < GetNumCols() &&
 		Y >= 0 &&
 		Y < GetNumRows())
 	{
-		Grid[X + Y * NumCols] = NewElement;
+		if (IsValid(NewElement))
+		{
+			Grid[X + Y * NumCols].bOccupied = true;
+			Grid[X + Y * NumCols].BlockState = NewElement->State;
+			Grid[X + Y * NumCols].BlockId = NewElement->GetName();
+			Grid[X + Y * NumCols].BlockType = NewElement->StaticClass();
+		}
+		else
+		{
+			Grid[X + Y * NumCols].bOccupied = false;
+			Grid[X + Y * NumCols].BlockState = EBlockState::NO_STATE;
+			Grid[X + Y * NumCols].BlockId = "";
+			Grid[X + Y * NumCols].BlockType = nullptr;
+		}
 	}
 }
 
-FVector AGrid::GetOrigin()  const
+FVector UGrid::GetOrigin()  const
 {
 	return Origin;
 }

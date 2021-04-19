@@ -6,7 +6,7 @@
 #include "Components/ActorComponent.h"
 #include "ChainQueue.generated.h"
 
-class Chain;
+class UChain;
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class BREAKTHESYSTEM_API UChainQueue : public UActorComponent
@@ -16,20 +16,29 @@ class BREAKTHESYSTEM_API UChainQueue : public UActorComponent
 public:	
 	// Sets default values for this component's properties
 	UChainQueue();
-
+	virtual void BeginDestroy() override;
 	/**
-	* Returns the next Chain without deleting it.
+	* Returns the next UChain without deleting it.
 	*/
-	Chain const * PeekNext();
+	UChain const * PeekNext();
 	/**
-	* Returns the next Chain and removes it from the queue.
+	* Returns the current UChain without deleting it.
 	*/
-	Chain const * GetNext();
-
+	UChain const* PeekCurr();
+	/**
+	* Removes the current UChain from the queue.
+	*/
+	void Pop();
+	/**
+	* Substitutes the current UChain with the one provided
+	*/
+	//void SetCurrentChain(UChain const& NewChain);
 	void Initialize(uint8 const MaxChainWidth, uint8 const MaxChainHeight, int32 const MaxChainLength);
 
 protected:
-	Chain const * CurrentChain;
+	UChain const* GetOrBuildChain(UChain const*& ChainPtr);
+	UChain const * CurrentChain;
+	UChain const * NextChain;
 	uint8 MaxChainWidth;
 	uint8 MaxChainHeight;
 	int32 MaxChainLength;

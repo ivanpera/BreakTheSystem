@@ -6,35 +6,63 @@
 #include "GameFramework/Actor.h"
 #include "Grid.generated.h"
 
-UCLASS()
-class BREAKTHESYSTEM_API AGrid : public AActor
+class ABlock;
+
+enum class EBlockState : uint8;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FGridChainReached);
+
+USTRUCT(BlueprintType)
+struct FGridSpace
+{
+	GENERATED_BODY()
+	FGridSpace() = default;
+	FGridSpace(bool Occupied, EBlockState const& State, FString const&& BlockName) :
+		bOccupied(Occupied),
+		BlockState(State),
+		BlockId(BlockName),
+		BlockType(nullptr) {}
+	UPROPERTY()
+		bool bOccupied;
+	UPROPERTY()
+		EBlockState BlockState;
+	UPROPERTY()
+		FString BlockId;
+	UPROPERTY()
+		TSubclassOf<ABlock> BlockType;
+};
+
+UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+class BREAKTHESYSTEM_API UGrid : public UActorComponent
 {
 	GENERATED_BODY()
 
 public:	
 	// Sets default values for this actor's properties
-	AGrid();
+	UGrid();
 	uint8 GetNumCols() const;
 	uint8 GetNumRows() const;
 	float GetWidth() const;
 	float GetHeight() const;
 	float GetStepX() const;
 	float GetStepY() const;
-	class UChainQueue const* GetChainQueue() const;
+	//class UChainQueue const* GetChainQueue() const;
 	FVector GetOrigin() const;
 	UFUNCTION(BlueprintCallable)
 		void OnRotate();
 	UFUNCTION(BlueprintCallable)
 		void OnMove(FVector2D const& Movement);
+	UFUNCTION(BlueprintCallable)
+		void OnForceDown();
 
 protected:
-	// Called when the game starts or when spawned
-	virtual void BeginPlay() override;
+	UPROPERTY(BlueprintAssignable, Category = "Delegates")
+		FGridChainReached OnChainStop;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 		float UpdateTimeSeconds;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly)
 		uint8 NumCols;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly)
 		uint8 NumRows;
 	UPROPERTY(BlueprintReadOnly)
 		float Width;
@@ -46,54 +74,44 @@ protected:
 		float StepY;
 	UPROPERTY(BlueprintReadOnly)
 		float RemainingTime;
-	//Components
-	class USceneComponent* RootComponent;
-	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
-		class UBoxComponent* Box;
-	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
-		class UBoxComponent* PreviewBox;
-	//Grids
-	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
-		TArray<class ABlock*> Grid;
-	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
-		TArray<class ABlock*> PreviewGrid;
-
-	//To delete
-	UPROPERTY(EditAnywhere)
-		TSubclassOf<ABlock> BlockType;
+	UPROPERTY(BlueprintReadOnly)
+		TArray<FGridSpace> Grid;
+	UPROPERTY(BlueprintReadOnly)
+		class UChain const* CurrentChain;
 
 	void MoveChain(FVector2D const& Movement);
 	void MoveBlock(class ABlock* Block, FVector2D const& Movement);
 	bool CanMoveChain(FVector2D const& Movement);
 	bool CanMoveBlock(class ABlock* Block, FVector2D const& Movement, uint8 const& StatesMask);
 	void DeleteCurrentChain();
-	void SetElementAt(uint8 X, uint8 Y, class ABlock* NewElement);
-	void UpdateGrid(float DeltaTime);
+	void SetElementAt(uint8 X, uint8 Y, ABlock const* NewElement);
 	bool IsInBounds(FVector2D const& Position) const;
 	void RotateChain();
 	void FallChainBlocks(float DeltaTime);
 	void HandlePlayerMovement();
-	class UChainQueue* ChainQueue;
-	class Chain const* CurrentChain;
 	FVector Origin;
+	TArray<ABlock*> GridBlocks;
 	TArray<ABlock*> CurrentChainBlocks;
 	FVector2D MovementInput;
 	float UpdateTimeLeft;
-	bool bUpdateGravity;
 	bool bRotate;
 	bool bMove;
 	bool bForceDown;
+	//bool bUpdateGravity;
+	//bool bHandleInput;
 
-public:	
-	// Called every frame
-	virtual void Tick(float DeltaTime) override;
-
-	virtual void BeginDestroy() override;
+public:
 
 	UFUNCTION(BlueprintCallable)
-		void SpawnChain();
+		void UpdateGrid(float DeltaTime);
 
 	UFUNCTION(BlueprintCallable)
-		class ABlock* GetElementAt(uint8 X, uint8 Y) const;
+		void SpawnChain(class UChain const* UChain);
+
+	UFUNCTION(BlueprintCallable)
+		void Initialize(uint8 Rows, uint8 Cols, FVector const& Centre, FVector const& Extents);
+
+	UFUNCTION(BlueprintCallable)
+		FGridSpace const& GetElementAt(uint8 X, uint8 Y) const;
 
 };

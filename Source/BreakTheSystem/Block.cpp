@@ -4,15 +4,24 @@
 #include "Block.h"
 #include "Grid.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/SceneComponent.h"
 
 // Sets default values
 ABlock::ABlock()
 {
     // Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
     PrimaryActorTick.bCanEverTick = true;
+    Root = CreateDefaultSubobject<USceneComponent>("Root");
     Mesh = CreateDefaultSubobject<UStaticMeshComponent>("Mesh");
-    this->SetRootComponent(Mesh);
+    SetRootComponent(Root);
+    FAttachmentTransformRules AttachRules(EAttachmentRule::KeepRelative, false);
+    Mesh->AttachToComponent(Root, AttachRules);
     Grid = nullptr;
+}
+
+void ABlock::SetScale(FVector const& Scale)
+{
+    Mesh->SetWorldScale3D(Scale);
 }
 
 FVector2D ABlock::GetPosition() const
@@ -20,7 +29,7 @@ FVector2D ABlock::GetPosition() const
     return Position;
 }
 
-void ABlock::Initialize(AGrid* NewGrid, FVector2D NewPosition)
+void ABlock::Initialize(UGrid* NewGrid, FVector2D NewPosition)
 {
     this->Grid = NewGrid;
     this->Position = NewPosition;
@@ -57,7 +66,8 @@ void ABlock::SetPosition(FVector2D const& NewPos)
 
 float ABlock::GetExtents() const
 {
-    return Mesh->Bounds.SphereRadius;
+    FVector Extents = Mesh->Bounds.BoxExtent;
+    return FMath::Min(Extents.Y, Extents.Z);
 }
 
 

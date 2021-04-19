@@ -4,6 +4,7 @@
 #include "ChainQueue.h"
 #include "Chain.h"
 #include "Grid.h"
+#include "Block.h"
 
 // Sets default values for this component's properties
 UChainQueue::UChainQueue()
@@ -22,20 +23,46 @@ void UChainQueue::Initialize(uint8 const _MaxChainWidth, uint8 const _MaxChainHe
 	MaxChainHeight = _MaxChainHeight;
 }
 
-Chain const* UChainQueue::PeekNext()
+UChain const* UChainQueue::GetOrBuildChain(UChain const*& ChainPtr)
 {
-	if (!CurrentChain)
+	if (!ChainPtr)
 	{
-		CurrentChain = Chain::GenerateChain({ MaxChainWidth * 1.0f, MaxChainHeight * 1.0f }, MaxChainLength);
+		//ChainPtr = UChain::GenerateChain({ MaxChainWidth * 1.0f, MaxChainHeight * 1.0f }, MaxChainLength);
 	}
 	return CurrentChain;
 }
 
-Chain const* UChainQueue::GetNext()
+UChain const* UChainQueue::PeekNext()
 {
-	Chain const* Result = PeekNext();
-	CurrentChain = nullptr;
-	return Result;
+	return GetOrBuildChain(NextChain);
+}
+
+UChain const* UChainQueue::PeekCurr()
+{
+	return GetOrBuildChain(CurrentChain);
+}
+
+//void UChainQueue::SetCurrentChain(UChain const& NewChain)
+//{
+//	if (CurrentChain)
+//	{
+//		delete CurrentChain;
+//	}
+//	CurrentChain = new UChain(NewChain);
+//}
+
+void UChainQueue::Pop()
+{
+	delete CurrentChain;
+	CurrentChain = NextChain;
+	NextChain = nullptr;
+}
+
+void UChainQueue::BeginDestroy()
+{
+	Super::BeginDestroy();
+	delete CurrentChain;
+	delete NextChain;
 }
 
 
