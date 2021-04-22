@@ -12,26 +12,6 @@ enum class EBlockState : uint8;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FGridChainReached);
 
-USTRUCT(BlueprintType)
-struct FGridSpace
-{
-	GENERATED_BODY()
-	FGridSpace() = default;
-	FGridSpace(bool Occupied, EBlockState const& State, FString const&& BlockName) :
-		bOccupied(Occupied),
-		BlockState(State),
-		BlockId(BlockName),
-		BlockType(nullptr) {}
-	UPROPERTY()
-		bool bOccupied;
-	UPROPERTY()
-		EBlockState BlockState;
-	UPROPERTY()
-		FString BlockId;
-	UPROPERTY()
-		TSubclassOf<ABlock> BlockType;
-};
-
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class BREAKTHESYSTEM_API UGrid : public UActorComponent
 {
@@ -46,14 +26,8 @@ public:
 	float GetHeight() const;
 	float GetStepX() const;
 	float GetStepY() const;
-	//class UChainQueue const* GetChainQueue() const;
 	FVector GetOrigin() const;
-	UFUNCTION(BlueprintCallable)
-		void OnRotate();
-	UFUNCTION(BlueprintCallable)
-		void OnMove(FVector2D const& Movement);
-	UFUNCTION(BlueprintCallable)
-		void OnForceDown();
+	bool IsInBounds(FVector2D const& Position) const;
 
 protected:
 	UPROPERTY(BlueprintAssignable, Category = "Delegates")
@@ -75,43 +49,46 @@ protected:
 	UPROPERTY(BlueprintReadOnly)
 		float RemainingTime;
 	UPROPERTY(BlueprintReadOnly)
-		TArray<FGridSpace> Grid;
+		TArray<ABlock*> Grid;
 	UPROPERTY(BlueprintReadOnly)
 		class UChain const* CurrentChain;
 
+	void ResizeBlock(ABlock* Block);
 	void MoveChain(FVector2D const& Movement);
 	void MoveBlock(class ABlock* Block, FVector2D const& Movement);
+	void DeleteBlock(class ABlock* Block);
 	bool CanMoveChain(FVector2D const& Movement);
 	bool CanMoveBlock(class ABlock* Block, FVector2D const& Movement, uint8 const& StatesMask);
+	bool CanMoveChainBlock(class ABlock* Block, FVector2D const& Movement, uint8 const& StatesMask);
 	void DeleteCurrentChain();
-	void SetElementAt(uint8 X, uint8 Y, ABlock const* NewElement);
-	bool IsInBounds(FVector2D const& Position) const;
+	void SetElementAt(uint8 X, uint8 Y, ABlock* NewElement);
 	void RotateChain();
 	void FallChainBlocks(float DeltaTime);
 	void HandlePlayerMovement();
 	FVector Origin;
-	TArray<ABlock*> GridBlocks;
+	TArray<ABlock*> NonChainBlocks;
 	TArray<ABlock*> CurrentChainBlocks;
 	FVector2D MovementInput;
 	float UpdateTimeLeft;
 	bool bRotate;
 	bool bMove;
 	bool bForceDown;
-	//bool bUpdateGravity;
-	//bool bHandleInput;
 
 public:
-
 	UFUNCTION(BlueprintCallable)
 		void UpdateGrid(float DeltaTime);
-
 	UFUNCTION(BlueprintCallable)
-		void SpawnChain(class UChain const* UChain);
-
+		void SpawnChain(class UChain const* UChain, FVector2D const& Position);
 	UFUNCTION(BlueprintCallable)
 		void Initialize(uint8 Rows, uint8 Cols, FVector const& Centre, FVector const& Extents);
-
 	UFUNCTION(BlueprintCallable)
-		FGridSpace const& GetElementAt(uint8 X, uint8 Y) const;
-
+		ABlock* GetElementAt(uint8 X, uint8 Y) const;
+	UFUNCTION(BlueprintCallable)
+		void OnRotate();
+	UFUNCTION(BlueprintCallable)
+		void OnMove(FVector2D const& Movement);
+	UFUNCTION(BlueprintCallable)
+		void OnForceDown();
+	UFUNCTION(BlueprintCallable)
+		void MoveChainToGrid(UGrid* const Other, FVector2D const& Position);
 };

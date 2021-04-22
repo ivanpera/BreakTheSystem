@@ -56,38 +56,6 @@ TSubclassOf<ABlock> UChainGenerator::GetRandomBlockType()
     }
 }
 
-//void UChainGenerator::SpawnChainBlocks(TArray<FVector2D> const& BlocksPositions)
-//{
-//	FActorSpawnParameters SpawnParams;
-//	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-//	FTransform Transform;
-//	//if (WeightedBlocks.Num())
-//	//{
-//	//	AGrid* ParentGrid = Cast<AGrid>(GetOwner());
-//	//	if (ParentGrid)
-//	//	{
-//	//		for (auto const& BlockPos : BlocksPositions)
-//	//		{
-//	//			//If the position is blocked, it's game over
-//	//			Transform.SetLocation(ParentGrid->GetOrigin() + FVector(0.0f, BlockPos.X * ParentGrid->GetStepX(), -BlockPos.Y * ParentGrid->GetStepY()));
-//	//			auto NewItem = GetWorld()->SpawnActor<ABlock>(WeightedBlocks.begin()->BlockType, Transform, SpawnParams);
-//	//			float NewItemExtents = NewItem->GetExtents();
-//	//			NewItem->State = EBlockState::IN_CHAIN;
-//	//			float MinDimension = FMath::Min(
-//	//				(ParentGrid->GetWidth()/ (NewItemExtents * ParentGrid->GetNumCols())) * .5f,
-//	//				(ParentGrid->GetHeight()/ (NewItemExtents * ParentGrid->GetNumRows())) * .5f
-//	//			);
-//	//			NewItem->SetActorScale3D(FVector(1.0f, MinDimension, MinDimension));
-//	//			NewItem->Initialize(ParentGrid, BlockPos);
-//	//		}
-//	//	}
-//	//}
-//	//else
-//	//{
-//	//	UE_LOG(LogTemp, Warning, TEXT("Missing BlockType"));
-//	//}
-//}
-
 UChain* UChainGenerator::GenerateChain(FVector2D const& SpawnArea, int32 MaxNumBlocks)
 {
     TSet<FString> OccupiedPositions;
@@ -95,7 +63,7 @@ UChain* UChainGenerator::GenerateChain(FVector2D const& SpawnArea, int32 MaxNumB
     if (MaxNumBlocks)
     {
         uint8 SpawnX = SpawnArea.X * 0.5f;
-        uint8 SpawnY = SpawnArea.Y;
+        uint8 SpawnY = SpawnArea.Y * 0.5f;
         //Set at bottom centre of spawnarea
         c->Root = NewObject<UChainItem>();
         c->Root->Initialize(EDirection::NO_DIRECTION, nullptr, { SpawnX * 1.0f, SpawnY * 1.0f }, GetRandomBlockType());

@@ -3,12 +3,13 @@
 
 #include "Grid.h"
 #include "Block.h"
+#include "ResolvableBlock.h"
 #include "Chain.h"
 #include "ChainItem.h"
 
+//TODO: move to chain generator
 static float constexpr MAX_CHAIN_SIZE = 4;
-static FGridSpace const DEFAULT_SPACE(false, EBlockState::NO_STATE, "");
-// Sets default values
+
 UGrid::UGrid()
 {}
 
@@ -21,15 +22,13 @@ void UGrid::Initialize(uint8 _NumRows, uint8 _NumCols, FVector const& Centre, FV
 	Height = Extents.Z * 2.0f;
 	float const DividerX = GetNumCols() <= 0 ? 1.0f : GetNumCols() * 1.0f;
 	float const DividerY = GetNumRows() <= 0 ? 1.0f : GetNumRows() * 1.0f;
-	Grid.Init(DEFAULT_SPACE, GetNumCols() * GetNumRows());
-	//PreviewGrid.Init(DEFAULT_SPACE, MAX_CHAIN_SIZE * MAX_CHAIN_SIZE);
+	Grid.Init(nullptr, GetNumCols() * GetNumRows());
 	CurrentChainBlocks.Init(nullptr, MAX_CHAIN_SIZE);
 	StepX = Width / DividerX;
 	StepY = Height / DividerY;
 	Origin = Centre
 		+ (FVector(0.0f, -Extents.Y, Extents.Z)
 			+ FVector(0.0f, StepX * 0.5f, -StepY * 0.5f));
-	//ChainQueue->Initialize(MAX_CHAIN_SIZE, MAX_CHAIN_SIZE, MAX_CHAIN_SIZE);
 }
 
 bool UGrid::CanMoveBlock(ABlock* Block, FVector2D const& Movement, uint8 const& IgnoreStates)
@@ -40,17 +39,28 @@ bool UGrid::CanMoveBlock(ABlock* Block, FVector2D const& Movement, uint8 const& 
 	{
 		return false;
 	}
-	FGridSpace const& ElementAt = GetElementAt(TargetPos.X, TargetPos.Y);
-	if (!ElementAt.bOccupied || ((uint8)ElementAt.BlockState & IgnoreStates))// || CanMoveBlock(ElementAt, Movement, StatesMask))
+	ABlock* ElementAt = GetElementAt(TargetPos.X, TargetPos.Y);
+	if (!ElementAt || ((uint8)ElementAt->State & IgnoreStates))// || CanMoveBlock(ElementAt, Movement, StatesMask))
 	{
 		return true;
 	}
 	return false;
 }
 
+bool UGrid::CanMoveChainBlock(ABlock* Block, FVector2D const& Movement, uint8 const& IgnoreStates)
+{
+	FVector2D BlockPos = Block->GetPosition();
+	FVector2D TargetPos = BlockPos + Movement;
+	if (TargetPos.X >= 0 && TargetPos.X < NumCols)
+	{
+		return CanMoveBlock(Block, Movement, IgnoreStates);
+	}
+	return false;
+}
+
 void UGrid::OnRotate()
 {
-	if (CurrentChain)
+	if (IsValid(CurrentChain))
 	{
 		bRotate = true;
 	}
@@ -58,7 +68,7 @@ void UGrid::OnRotate()
 
 void UGrid::OnForceDown()
 {
-	if (CurrentChain)
+	if (IsValid(CurrentChain))
 	{
 		bForceDown = true;
 	}
@@ -66,7 +76,7 @@ void UGrid::OnForceDown()
 
 void UGrid::OnMove(FVector2D const& Movement)
 {
-	if (CurrentChain)
+	if (IsValid(CurrentChain))
 	{
 		bMove = true;
 		MovementInput = Movement;
@@ -75,7 +85,7 @@ void UGrid::OnMove(FVector2D const& Movement)
 
 void UGrid::RotateChain()
 {
-	if (CurrentChain)
+	if (IsValid(CurrentChain))
 	{
 		UChain const* Rotated = CurrentChain->Rotate();
 		TArray<FVector2D> NewPositions = Rotated->GetBlocksPositions(CurrentChainBlocks[0]->GetPosition());
@@ -103,9 +113,9 @@ void UGrid::RotateChain()
 		{
 			FVector2D const NewOffsetPos(NewPos + Offset);
 			
-			FGridSpace const& ElementAt = GetElementAt(NewOffsetPos.X, NewOffsetPos.Y);
+			ABlock* ElementAt = GetElementAt(NewOffsetPos.X, NewOffsetPos.Y);
 
-			if (ElementAt.bOccupied && ElementAt.BlockState != EBlockState::IN_CHAIN)
+			if (ElementAt && ElementAt->State != EBlockState::IN_CHAIN)
 			{
 				return;
 			}
@@ -116,8 +126,8 @@ void UGrid::RotateChain()
 			ABlock* CurrBlock = CurrentChainBlocks[i];
 			FVector2D CurrBlockPos = CurrBlock->GetPosition();
 			FVector2D TargetPos = NewPositions[i] + Offset;
-			FGridSpace const& ElementFrom = GetElementAt(CurrBlockPos.X, CurrBlockPos.Y);
-			if (ElementFrom.BlockId == CurrBlock->GetName())
+			ABlock* ElementFrom = GetElementAt(CurrBlockPos.X, CurrBlockPos.Y);
+			if (ElementFrom && ElementFrom->GetName() == CurrBlock->GetName())
 			{
 				SetElementAt(CurrBlockPos.X, CurrBlockPos.Y, {});
 			}
@@ -132,8 +142,8 @@ void UGrid::MoveBlock(ABlock* Block, FVector2D const& Movement)
 {
 	FVector2D BlockPos = Block->GetPosition();
 	FVector2D TargetPos = BlockPos + Movement;
-	FGridSpace const& ElementFrom = GetElementAt(BlockPos.X, BlockPos.Y);
-	if (ElementFrom.BlockId == Block->GetName())
+	ABlock* ElementFrom = GetElementAt(BlockPos.X, BlockPos.Y);
+	if (ElementFrom && ElementFrom->GetName() == Block->GetName())
 	{
 		SetElementAt(BlockPos.X, BlockPos.Y, nullptr);
 	}
@@ -141,11 +151,21 @@ void UGrid::MoveBlock(ABlock* Block, FVector2D const& Movement)
 	Block->SetPosition(TargetPos);
 }
 
+void UGrid::DeleteBlock(ABlock* Block)
+{
+	if (IsValid(Block))
+	{
+		FVector2D const& BlockPos = Block->GetPosition();
+		SetElementAt(BlockPos.X, BlockPos.Y, nullptr);
+		Block->Destroy();
+	}
+}
+
 bool UGrid::CanMoveChain(FVector2D const& Movement)
 {
 	for (ABlock* Block : CurrentChainBlocks)
 	{
-		if (!CanMoveBlock(Block, Movement, (uint8)EBlockState::IN_CHAIN))
+		if (!CanMoveChainBlock(Block, Movement, (uint8)EBlockState::IN_CHAIN))
 		{
 			return false;
 		}
@@ -155,19 +175,18 @@ bool UGrid::CanMoveChain(FVector2D const& Movement)
 
 void UGrid::DeleteCurrentChain()
 {
-	if (CurrentChain)
+	if (IsValid(CurrentChain))
 	{
 		for (ABlock* Block : CurrentChainBlocks)
 		{
 			Block->State = EBlockState::FALLING;
 			//TODO: Move to another function
 			FVector2D const& BlockPosition = Block->GetPosition();
-			if (BlockPosition.Y < 0 && CanMoveBlock(Block, { BlockPosition.X, 0 }, (uint8)EBlockState::FALLING | (uint8)EBlockState::IN_CHAIN))
+			if (!IsInBounds(BlockPosition) && CanMoveBlock(Block, { 0, 1 }, (uint8)EBlockState::FALLING | (uint8)EBlockState::IN_CHAIN))
 			{
 				//Set bLost
-				//Block->SetPosition({ BlockLocation.X, 0.0f });
 			}
-			SetElementAt(BlockPosition.X, BlockPosition.Y, Block);
+			NonChainBlocks.Add(Block);
 		}
 		bRotate = false;
 		bMove = false;
@@ -175,9 +194,17 @@ void UGrid::DeleteCurrentChain()
 		bForceDown = false;
 		CurrentChain = nullptr;
 		CurrentChainBlocks.Reset(MAX_CHAIN_SIZE);
-		//bHandleInput = false;
-		//bUpdateGravity = true;
 	}
+}
+
+void UGrid::ResizeBlock(ABlock* Block)
+{
+	float NewItemExtents = Block->GetExtents();
+	float MinDimension = FMath::Min(
+		(GetWidth() / (NewItemExtents * GetNumCols())) * .5f,
+		(GetHeight() / (NewItemExtents * GetNumRows())) * .5f
+	);
+	Block->SetScale(FVector(MinDimension, MinDimension, MinDimension));
 }
 
 void UGrid::MoveChain(FVector2D const& Movement)
@@ -192,7 +219,7 @@ void UGrid::FallChainBlocks(float DeltaTime)
 {
 	if (UpdateTimeLeft <= 0 || bForceDown)
 	{
-		if (CurrentChain)
+		if (IsValid(CurrentChain))
 		{
 			if (!CanMoveChain({ 0.0f, 1.0f }))
 			{
@@ -218,7 +245,7 @@ void UGrid::FallChainBlocks(float DeltaTime)
 
 void UGrid::HandlePlayerMovement()
 {
-	if (CurrentChain)
+	if (IsValid(CurrentChain))
 	{
 		if (bRotate)
 		{
@@ -239,23 +266,42 @@ void UGrid::HandlePlayerMovement()
 
 void UGrid::UpdateGrid(float DeltaTime)
 {
-	for (ABlock* Block : GridBlocks)
+	for (ABlock* Block : NonChainBlocks)
 	{
-		if (Block->State == EBlockState::IN_CHAIN || Block->State == EBlockState::PENDING_RESOLUTION) {
+		if (Block->State == EBlockState::RESOLVED) {
 			continue;
 		}
-		FVector2D Movement(0.f, 1.f);
-		if (CanMoveBlock(Block, Movement, 0))
+		switch (Block->State)
 		{
-			MoveBlock(Block, Movement);
-			Block->State = EBlockState::FALLING;
+		case EBlockState::PENDING_RESOLUTION:
+		{
+			AResolvableBlock* Resolvable = Cast<AResolvableBlock>(Block);
+			if (IsValid(Resolvable))
+			{
+				Resolvable->GetResolvedBlocks();
+				//TODO: Do something with this information
+			}
+			Block->State = EBlockState::RESOLVED;
+			break;
 		}
-		else
+		case EBlockState::TO_DELETE:
+			DeleteBlock(Block);
+			break;
+		default:
 		{
-			Block->State = EBlockState::IDLE;
+			FVector2D Movement(0.f, 1.f);
+			if (CanMoveBlock(Block, Movement, 0))
+			{
+				MoveBlock(Block, Movement);
+				Block->State = EBlockState::FALLING;
+			}
+			else
+			{
+				Block->State = EBlockState::IDLE;
+			}
+		}
 		}
 	}
-	//bUpdateGravity = false;
 	FallChainBlocks(DeltaTime);
 	HandlePlayerMovement();
 
@@ -292,6 +338,25 @@ float UGrid::GetStepY() const
 	return StepY;
 }
 
+void UGrid::MoveChainToGrid(UGrid* const Other, FVector2D const& Position)
+{
+	Other->CurrentChain = this->CurrentChain;
+	Other->CurrentChainBlocks = this->CurrentChainBlocks;
+	auto const BlocksPositions = CurrentChain->GetBlocksPositions(Position);
+	for (int i = 0; i < CurrentChainBlocks.Num(); i++)
+	{
+		FVector2D const& newPos = BlocksPositions[i];
+		ABlock* Block = CurrentChainBlocks[i];
+		SetElementAt(Block->GetPosition().X, Block->GetPosition().Y, nullptr);
+		Other->SetElementAt(newPos.X, newPos.Y, Block);
+		Block->SetGrid(Other);
+		Block->SetPosition(newPos, true);
+		Other->ResizeBlock(Block);
+	}
+	CurrentChainBlocks.Empty();
+	CurrentChain = nullptr;
+}
+
 bool UGrid::IsInBounds(FVector2D const& TestPosition) const
 {
 	return TestPosition.X >= 0 &&
@@ -300,12 +365,12 @@ bool UGrid::IsInBounds(FVector2D const& TestPosition) const
 		TestPosition.Y < GetNumRows();
 }
 
-void UGrid::SpawnChain(UChain const* Chain)
+void UGrid::SpawnChain(UChain const* Chain, FVector2D const& Position)
 {
 	CurrentChain = Chain;
 	CurrentChainBlocks.Reset(MAX_CHAIN_SIZE);
 	float SpawnX = FMath::FloorToFloat(NumCols * .5f);
-	TArray<FVector2D> ChainBlocksPositions = CurrentChain->GetBlocksPositions({SpawnX, -1});
+	TArray<FVector2D> ChainBlocksPositions = CurrentChain->GetBlocksPositions(Position);
 	TArray<UChainItem const*> ChainItems = CurrentChain->GetItems();
 
 	FActorSpawnParameters SpawnParams;
@@ -317,22 +382,15 @@ void UGrid::SpawnChain(UChain const* Chain)
 		UChainItem const* Item = ChainItems[i];
 		Transform.SetLocation(Origin + FVector(0.0f, BlockPos.X * GetStepX(), -BlockPos.Y * GetStepY()));
 		auto NewItem = GetWorld()->SpawnActor<ABlock>(Item->BlockType, Transform, SpawnParams);
-		float NewItemExtents = NewItem->GetExtents();
 		NewItem->State = EBlockState::IN_CHAIN;
-		float MinDimension = FMath::Min(
-			(GetWidth() / (NewItemExtents * GetNumCols())) * .5f,
-			(GetHeight() / (NewItemExtents * GetNumRows())) * .5f
-		);
 		CurrentChainBlocks.Add(NewItem);
-		GridBlocks.Add(NewItem);
 		SetElementAt(BlockPos.X, BlockPos.Y, NewItem);
-		NewItem->SetScale(FVector(MinDimension, MinDimension, MinDimension));
 		NewItem->Initialize(this, BlockPos);
+		ResizeBlock(NewItem);
 	}
-	//bHandleInput = true;
 }
 
-FGridSpace const& UGrid::GetElementAt(uint8 X, uint8 Y) const
+ABlock* UGrid::GetElementAt(uint8 X, uint8 Y) const
 {
 	if (X >= 0 &&
 		X < GetNumCols() &&
@@ -341,10 +399,10 @@ FGridSpace const& UGrid::GetElementAt(uint8 X, uint8 Y) const
 	{
 		return Grid[X + Y * NumCols];
 	}
-	return DEFAULT_SPACE;
+	return nullptr;
 }
 
-void UGrid::SetElementAt(uint8 X, uint8 Y, ABlock const* NewElement)
+void UGrid::SetElementAt(uint8 X, uint8 Y, ABlock* NewElement)
 {
 	if (X >= 0 &&
 		X < GetNumCols() &&
@@ -353,17 +411,11 @@ void UGrid::SetElementAt(uint8 X, uint8 Y, ABlock const* NewElement)
 	{
 		if (IsValid(NewElement))
 		{
-			Grid[X + Y * NumCols].bOccupied = true;
-			Grid[X + Y * NumCols].BlockState = NewElement->State;
-			Grid[X + Y * NumCols].BlockId = NewElement->GetName();
-			Grid[X + Y * NumCols].BlockType = NewElement->StaticClass();
+			Grid[X + Y * NumCols] = NewElement;
 		}
 		else
 		{
-			Grid[X + Y * NumCols].bOccupied = false;
-			Grid[X + Y * NumCols].BlockState = EBlockState::NO_STATE;
-			Grid[X + Y * NumCols].BlockId = "";
-			Grid[X + Y * NumCols].BlockType = nullptr;
+			Grid[X + Y * NumCols] = nullptr;
 		}
 	}
 }

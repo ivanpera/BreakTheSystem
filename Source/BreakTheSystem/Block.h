@@ -15,7 +15,9 @@ enum class EBlockState : uint8
 	FALLING = 1 << 0,
 	IN_CHAIN = 1 << 1,
 	IDLE = 1 << 2,
-	PENDING_RESOLUTION = 1 << 3
+	PENDING_RESOLUTION = 1 << 3,
+	RESOLVED = 1 << 4,
+	TO_DELETE = 1 << 5
 };
 
 UCLASS()
@@ -23,23 +25,25 @@ class BREAKTHESYSTEM_API ABlock : public AActor
 {
 	GENERATED_BODY()
 	
-public:	
+public:
+	UFUNCTION(BlueprintCallable)
+		FVector2D GetPosition() const;
+public:
+	virtual void Tick(float DeltaSeconds) override;
 	// Sets default values for this actor's properties
 	ABlock();
 	float GetExtents() const;
 	void Initialize(UGrid* Grid, FVector2D NewPosition);
-	void SetPosition(FVector2D const& NewPos);
+	void SetPosition(FVector2D const& NewPos, bool bSnap = false);
 	void SetScale(FVector const& Scale);
-	UFUNCTION(BlueprintCallable)
-		FVector2D GetPosition() const;
+	void SetGrid(UGrid* const Grid);
+public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 		float TransitionSpeedSeconds;
-	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
+	UPROPERTY(BlueprintReadWrite, VisibleAnywhere)
 		EBlockState State;
-	virtual void Tick(float DeltaSeconds) override;
 
 protected:
-	void Translate(float DeltaSeconds);
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 		FVector2D Position;
 	UPROPERTY(BlueprintReadOnly, EditAnywhere)
@@ -48,4 +52,8 @@ protected:
 		class UStaticMeshComponent* Mesh;
 	UPROPERTY(BlueprintReadOnly)
 		UGrid* Grid;
+protected:
+	void Translate(float DeltaSeconds);
+protected:
+	float Extents;
 };

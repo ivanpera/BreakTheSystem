@@ -21,7 +21,7 @@ ABlock::ABlock()
 
 void ABlock::SetScale(FVector const& Scale)
 {
-    Mesh->SetWorldScale3D(Scale);
+    SetActorScale3D(Scale);
 }
 
 FVector2D ABlock::GetPosition() const
@@ -29,15 +29,31 @@ FVector2D ABlock::GetPosition() const
     return Position;
 }
 
+void ABlock::SetGrid(UGrid* const NewGrid)
+{
+    Grid = NewGrid;
+}
+
 void ABlock::Initialize(UGrid* NewGrid, FVector2D NewPosition)
 {
     this->Grid = NewGrid;
     this->Position = NewPosition;
+    FVector BoxExtents = Mesh->Bounds.BoxExtent;
+    Extents = FMath::Min(BoxExtents.Y, BoxExtents.Z);
 }
 
 void ABlock::Tick(float DeltaSeconds)
 {
-    Translate(DeltaSeconds);
+    if (Grid)
+    {
+        SetActorHiddenInGame(!Grid->IsInBounds(Position));
+        Translate(DeltaSeconds);
+        if (State == EBlockState::RESOLVED)
+        {
+            //TODO: Play animation (or whatever)
+            State = EBlockState::TO_DELETE;
+        }
+    }
 }
 
 void ABlock::Translate(float DeltaSeconds)
@@ -59,15 +75,20 @@ void ABlock::Translate(float DeltaSeconds)
     }
 }
 
-void ABlock::SetPosition(FVector2D const& NewPos)
+void ABlock::SetPosition(FVector2D const& NewPos, bool bSnap)
 {
-    Position = NewPos;
+    Position = { FMath::FloorToFloat(NewPos.X), FMath::FloorToFloat(NewPos.Y) };
+    if (bSnap)
+    {
+        FVector TargetLocation = Grid->GetOrigin() + FVector(.0f, Position.X * Grid->GetStepX(), -Position.Y * Grid->GetStepY());
+        FVector NewLocation = GetActorLocation() + (TargetLocation - GetActorLocation());
+        SetActorLocation(NewLocation);
+    }
 }
 
 float ABlock::GetExtents() const
 {
-    FVector Extents = Mesh->Bounds.BoxExtent;
-    return FMath::Min(Extents.Y, Extents.Z);
+    return Extents;
 }
 
 
